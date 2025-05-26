@@ -41,6 +41,7 @@ async def play(ctx, url: str):
     logging.info(f"downloading song from url {url}")
     await asyncio.sleep(1)
 
+    #play an audio clip to confirm we're downloading the song
     dl_notif_source = discord.FFmpegPCMAudio('dlsong.mp3')
     voice_client.play(dl_notif_source)
     
