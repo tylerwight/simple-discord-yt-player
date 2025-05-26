@@ -5,7 +5,7 @@ This bot works by taking a youtube link, downloading the video's audio as mp3, a
 
 # How to Use
 Once the bot is installed and running (see below), it has two commands
-- !play <youtube url>  -- Bot will join the voice channel you are currently in and start to play the audio. It announces it's downloading the audio so you know to wait a few seconds for it to download
+- !play >youtube url<  -- Bot will join the voice channel you are currently in and start to play the audio. It announces it's downloading the audio so you know to wait a few seconds for it to download
 - !stop -- stops the bot if it's currently playing
 
 # Limitations
