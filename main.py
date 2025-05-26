@@ -21,8 +21,8 @@ now_playing = None
 goto_next = False
 downloading = False
 
-@bot.command()
-async def play(ctx, url: str):
+@bot.command(help="!play >youtube URL< -- Plays a Youtube Video's audio in the voice channel, or adds it to the queue.")
+async def play(ctx, url: str = None):
     global downloading 
     global now_playing
     
@@ -30,9 +30,14 @@ async def play(ctx, url: str):
         await ctx.send("You are not connected to a voice channel.")
         return
     
-    if "youtube.com" not in url:
-        await ctx.send("Please paste a youtube URL.")
+    if url is None:
+         await ctx.send("Please put a URL after play command. EX: '!play youtube.com/abcxyz'")
+         return
+
+    if not ("youtube.com" in url or "youtu.be" in url):
+        await ctx.send("Please use a youtube URL")
         return
+
     
     
     voice_client = ctx.voice_client
@@ -46,6 +51,7 @@ async def play(ctx, url: str):
         await ctx.send(f"Added <{url}> to queue.")
         return
 
+    #Loop while there is a queue
     while len(queue) > 0:
         current_url = queue.pop(0)
         
@@ -83,7 +89,7 @@ async def play(ctx, url: str):
     now_playing = None
     await voice_client.disconnect()
 
-@bot.command()
+@bot.command(help="Stops all audio and disconnects the bot, also clears the queue.")
 async def stop(ctx):
     if ctx.voice_client is None:
         await ctx.send("I'm not connected to a voice channel.")
@@ -99,7 +105,7 @@ async def stop(ctx):
 
 
 
-@bot.command()
+@bot.command(help="Shows the current queue of YouTube links.")
 async def show_queue(ctx):
     if ctx.voice_client is None:
         await ctx.send("I'm not connected to a voice channel.")
@@ -114,8 +120,8 @@ async def show_queue(ctx):
     await ctx.send(f"**__Currently Playing__**\n <{now_playing}>\n**__Queue__**\n {pretty_queue}")
 
 
-@bot.command()
-async def next(ctx):
+@bot.command(help="Skips current song")
+async def skip(ctx):
     if ctx.voice_client is None:
         await ctx.send("I'm not connected to a voice channel.")
         return
@@ -123,9 +129,5 @@ async def next(ctx):
     global goto_next
     goto_next = True
 
-# @bot.command()
-# async def help(ctx):
-    
-#     await ctx.send(f"**__Commands__**\n!play >youtube url< - plays song or adds to the queue if the bot is running\n!stop - stops song and disconnects bot\n !show_queue - Displays current queue of songs\n!next - skip song to next queue")
 
 bot.run(DISCORD_TOKEN)

@@ -4,13 +4,14 @@ This is a very simple and lightweight Discord bot that plays audio of youtube vi
 This bot works by taking a youtube link, downloading the video's audio as mp3, and then plays that mp3 file over discord. This is to make it as simple as possible and not deal with streaming the audio. The downside is that it takes some time to play the audio after you send the link, but works fine. It deletes the audio once it's done.
 
 # How to Use
-Once the bot is installed and running (see below), it has two commands
+Once the bot is installed and running (see below), it has three commands
 - !play >youtube url<  -- Bot will join the voice channel you are currently in and start to play the audio. It announces it's downloading the audio so you know to wait a few seconds for it to download
 - !stop -- stops the bot if it's currently playing
+- !show_queue -- shows the current queue of songs
 
 # Limitations
 This bot is very basic so it has some limitations
-- No queue function. You have to !stop or wait for the bot to finish to play different audio
+- ~~No queue function. You have to !stop or wait for the bot to finish to play different audio~~
 - Does **NOT** work on multiple servers. If this bot is playing audio on two different Discord server they will overwrite each other
 - Hard coded with a 600 second video limit, this can be edited in the code
 - No volume control, each person needs to turn the bots volume down on their own in Discord
@@ -18,7 +19,8 @@ This bot is very basic so it has some limitations
 
 
 # todo
-- [ ] Add queue functionality
+- [x] Add queue functionality
+- [ ] Refactor to use Cogs and a Class
 - [ ] Support more than one server
 
 # Installation
