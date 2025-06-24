@@ -130,4 +130,24 @@ async def skip(ctx):
     goto_next = True
 
 
+@bot.command(help="tests voice connection")
+async def testvoice(ctx):
+    if not ctx.author.voice:
+        await ctx.send("You are not connected to a voice channel.")
+        return
+
+    voice_client = ctx.voice_client
+    if not voice_client:
+        channel = ctx.author.voice.channel
+        voice_client = await channel.connect()
+
+    dl_notif_source = discord.FFmpegPCMAudio('dlsong.mp3')
+    voice_client.play(dl_notif_source)
+
+    while voice_client.is_playing():
+            await asyncio.sleep(2)
+    
+    await voice_client.disconnect()
+
+
 bot.run(DISCORD_TOKEN)
