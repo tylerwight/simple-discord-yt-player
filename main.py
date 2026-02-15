@@ -102,7 +102,7 @@ async def play(ctx, url: str = None):
     await voice_client.disconnect()
 
 
-@bot.command(help="!play_local (attach an mp3) -- Immediately plays the attached mp3, interrupting current audio.")
+@bot.command(help="!play_local (attach an mp3) -- Immediately plays the attached mp3, interrupting current audio. Continues to next in queue after finished.")
 async def play_local(ctx):
     if not ctx.author.voice:
         await ctx.send("You are not connected to a voice channel.")
@@ -118,6 +118,7 @@ async def play_local(ctx):
     if not filename_lower.endswith(".mp3"):
         await ctx.send("Please upload an **.mp3** file.")
         return
+
 
     voice_client = ctx.voice_client
     if not voice_client:
@@ -150,6 +151,8 @@ async def play_local(ctx):
     while voice_client.is_playing():
         await asyncio.sleep(2)
 
+    if len(queue) <= 0:
+        await voice_client.disconnect()
     try:
         os.remove(local_path)
     except Exception:

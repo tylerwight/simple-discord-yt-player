@@ -13,7 +13,7 @@ Once the bot is installed and running (see below), it has three commands
 This bot is very basic so it has some limitations
 - ~~No queue function. You have to !stop or wait for the bot to finish to play different audio~~
 - Does **NOT** work on multiple servers. If this bot is playing audio on two different Discord server they will overwrite each other
-- Hard coded with a 600 second video limit, this can be edited in the code
+- ~~Hard coded with a 600 second video limit~~ max video length can be configured now
 - No volume control, each person needs to turn the bots volume down on their own in Discord
 
 
