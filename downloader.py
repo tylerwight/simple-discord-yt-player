@@ -25,14 +25,27 @@ def get_song(url, max_length = 10 * 60):
         info = ydl.extract_info(url, download=False)
 
         duration = info.get('duration', 0)
-        print(f"Video duration: {duration} seconds")
+        logging.info(f"Video duration: {duration} seconds")
 
         if duration > max_length:
-            return False, f"Video too long (max is {max_length} seconds)"
+            raise Exception(f"Video too long (max is {max_length} seconds)")
     
         with yt_dlp.YoutubeDL(opts_download) as ydl2:
             ydl2.download([url])
 
         
-        return True, filename
+        return filename
         
+
+def get_title(url):
+    logging.info("Getting Title")
+    opts = {
+        "quiet": True,
+        "skip_download": True
+    }
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        title = info.get("title", None)
+
+    return title
