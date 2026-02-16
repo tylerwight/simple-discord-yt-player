@@ -1,1 +1,1 @@
-pip install yt-dlp --upgrade
+pip install yt-dlp[default] --upgrade
