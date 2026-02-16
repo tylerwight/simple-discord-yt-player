@@ -123,7 +123,7 @@ async def play(ctx, url: str = None):
                 logging.warning(f"Error downloading song: {e}")
                 await ctx.send(f"Error downloading song: {e}")
                 downloading = False
-                return
+                continue
 
             downloading = False
     
@@ -148,8 +148,8 @@ async def play(ctx, url: str = None):
     await voice_client.disconnect()
 
 
-@bot.command(help="Adds every video from a YouTube playlist URL to the queue (does not start playback). Usage: !play_playlist <playlist_url>")
-async def play_playlist(ctx, url: str = None):
+@bot.command(help="Adds playlist to queue. Usage: !playlist <playlist_url>")
+async def playlist(ctx, url: str = None):
     if not url:
         await ctx.send("Please provide a YouTube playlist URL. Example: `!play_playlist https://www.youtube.com/...`")
         return
@@ -164,13 +164,11 @@ async def play_playlist(ctx, url: str = None):
         await ctx.send("No playable entries found in that playlist.")
         return
 
-    # Add to your global queue
     added = 0
     for item in entries:
         queue.append({"type": "Youtube", "title": item["title"], "url": item["url"]})
         added += 1
 
-    #await ctx.send(f"Added **{added}** tracks from the playlist to the queue.")
     await send_update_embed(ctx, "Added to queue",  f"Added **{added}** songs to the queue!", 5)
 
 
@@ -207,30 +205,6 @@ async def stop(ctx):
 
 
 
-# @bot.command(help="Shows the current queue of YouTube links.")
-# async def show_queue(ctx):
-#     global queue
-#     length = 10
-
-#     if ctx.voice_client is None:
-#         await ctx.send("I'm not connected to a voice channel.")
-#         return
-    
-#     if queue:
-#         pretty_queue = "\n".join(
-#             f"#{i+1} Title: {queue_item['title']} -- Type: {queue_item['type']}"
-#             for i, queue_item in enumerate(queue[:length])
-#         )
-#     else:
-#          pretty_queue = "Nothing in queue."
-
-#     if len(queue) > length:
-#         await ctx.send(f"**__Currently Playing__**\n {now_playing}\n**__Queue__**\n {pretty_queue}\n... and {len(queue) - length} more...")
-#     else:
-#         await ctx.send(f"**__Currently Playing__**\n {now_playing}\n**__Queue__**\n {pretty_queue}")
-
-
-
 @bot.command(help="Shows the current queue.")
 async def show_queue(ctx):
     await send_update_embed(ctx, "Current Queue", "", 10)
@@ -249,69 +223,93 @@ async def shuffle(ctx):
     await send_update_embed(ctx, "Queue Shuffled", "", 5)
 
 
-async def send_update_embed(ctx, intitle: str,  message: str, length: int = 10):
+async def send_update_embed(ctx, intitle: str, message: str, length: int = 10, chunk_size: int = 5):
     global queue, now_playing
 
     embed = discord.Embed(
         title=intitle,
-        description=message,  # message goes at the top
+        description=message,
         color=discord.Color.blurple(),
     )
 
-    # Currently playing
     embed.add_field(
         name="▶️ Currently Playing",
         value=f"**{now_playing}**" if now_playing else "Nothing",
         inline=False,
     )
 
-    # Up next
-    if queue:
-        # Make YouTube entries clickable when possible
-        lines = []
-        for i, item in enumerate(queue[:length], start=1):
-            title = item.get("title", "Unknown title")
-            qtype = item.get("type", "Unknown")
-            url = item.get("url")
-
-            if qtype == "Youtube" and url:
-                line = f"`{i}.` **[{title}]({url})**  •  *{qtype}*"
-            else:
-                line = f"`{i}.` **{title}**  •  *{qtype}*"
-
-            lines.append(line)
-
-        queue_text = "\n".join(lines)
-
-        if len(queue) > length:
-            queue_text += f"\n\n… and **{len(queue) - length}** more."
-
-        embed.add_field(name="📜 Up Next", value=queue_text, inline=False)
-    else:
+    if not queue:
         embed.add_field(name="📜 Up Next", value="Queue is empty.", inline=False)
+        embed.set_footer(text="Total tracks in queue: 0")
+        await ctx.send(embed=embed)
+        return
+
+    shown = queue[:length]
+
+    # Build formatted lines first
+    lines = []
+    for i, item in enumerate(shown, start=1):
+        title = item.get("title", "Unknown title")
+        qtype = item.get("type", "Unknown")
+        url = item.get("url")
+
+        # (Optional) hard-trim absurd titles so one song doesn't eat the whole field
+        if len(title) > 80:
+            title = title[:77] + "..."
+
+        if qtype == "Youtube" and url:
+            line = f"`{i}.` **[{title}]({url})**  •  *{qtype}*"
+        else:
+            line = f"`{i}.` **{title}**  •  *{qtype}*"
+
+        lines.append(line)
+
+    # Split into multiple fields, trying for chunk_size songs per field,
+    # BUT also respecting the 1024 char field limit.
+    def add_up_next_fields(embed: discord.Embed, lines: list[str], chunk_size: int):
+        field_idx = 0
+        i = 0
+
+        while i < len(lines):
+            field_idx += 1
+            field_lines = []
+            field_len = 0
+            count_in_field = 0
+
+            while i < len(lines) and count_in_field < chunk_size:
+                candidate = lines[i]
+                candidate_len = len(candidate) + (1 if field_lines else 0)  # + newline if needed
+
+                # If adding this line would exceed Discord's 1024 limit, stop this field early.
+                if field_len + candidate_len > 1024:
+                    break
+
+                field_lines.append(candidate)
+                field_len += candidate_len
+                count_in_field += 1
+                i += 1
+
+            # If we couldn't even fit a single line (super long URL/title), truncate brutally.
+            if not field_lines and i < len(lines):
+                truncated = lines[i][:1000] + "…"
+                field_lines = [truncated]
+                i += 1
+
+            name = "📜 Up Next" if field_idx == 1 else "\u200b"  # blank header for subsequent fields
+            embed.add_field(name=name, value="\n".join(field_lines), inline=False)
+
+    add_up_next_fields(embed, lines, chunk_size)
+
+    if len(queue) > length:
+        embed.add_field(
+            name="\u200b",
+            value=f"… and **{len(queue) - length}** more in queue.",
+            inline=False,
+        )
 
     embed.set_footer(text=f"Total tracks in queue: {len(queue)}")
-
     await ctx.send(embed=embed)
 
-# @bot.command(help="tests voice connection")
-# async def testvoice(ctx):
-#     if not ctx.author.voice:
-#         await ctx.send("You are not connected to a voice channel.")
-#         return
-
-#     voice_client = ctx.voice_client
-#     if not voice_client:
-#         channel = ctx.author.voice.channel
-#         voice_client = await channel.connect()
-
-#     dl_notif_source = discord.FFmpegPCMAudio('dlsong.mp3')
-#     voice_client.play(dl_notif_source)
-
-#     while voice_client.is_playing():
-#             await asyncio.sleep(2)
-    
-#     await voice_client.disconnect()
 
 
 bot.run(DISCORD_TOKEN)
