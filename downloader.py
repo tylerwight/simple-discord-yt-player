@@ -1,7 +1,7 @@
 import yt_dlp
 import os
 import logging
-
+import asyncio
 
 def get_song(url, max_length = 10 * 60):
     filename = 'playing.mp3'
@@ -37,7 +37,7 @@ def get_song(url, max_length = 10 * 60):
         return filename
         
 
-def get_title(url):
+def get_title_blocking(url):
     logging.info("Getting Title")
     opts = {
         "quiet": True,
@@ -49,3 +49,6 @@ def get_title(url):
         title = info.get("title", None)
 
     return title
+
+async def get_title(url):
+    return await asyncio.to_thread(get_title_blocking, url)

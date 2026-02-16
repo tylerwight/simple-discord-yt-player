@@ -20,7 +20,7 @@ now_playing = None
 goto_next = False
 downloading = False
 
-@bot.command(help="!play >youtube URL< -- Plays a Youtube Video's audio in the voice channel, or adds it to the queue.")
+@bot.command(help="Plays a youtube URL or attached mp3 file: `!play >youtube URL<` or `!play` w/ mp3 file attached")
 async def play(ctx, url: str = None):
     global downloading 
     global now_playing
@@ -29,35 +29,67 @@ async def play(ctx, url: str = None):
         await ctx.send("You are not connected to a voice channel.")
         return
     
-    if url is None:
-         await ctx.send("Please put a URL after play command. EX: '!play youtube.com/abcxyz'")
+    if (url is None) and (not ctx.message.attachments):
+         await ctx.send("Please add a youtube URL or attach an mp3 file: `!play youtube.com/abcxyz`")
          return
 
-    if not ("youtube.com" in url or "youtu.be" in url):
+    if (not ctx.message.attachments) and not ("youtube.com" in url or "youtu.be" in url):
         await ctx.send("Please use a youtube URL")
         return
 
-    
+    if ctx.message.attachments and url is not None:
+        await ctx.send("You attached a file AND sent a URL. Pick one buddy")
+        return
     
     voice_client = ctx.voice_client
     if not voice_client:
         channel = ctx.author.voice.channel
         voice_client = await channel.connect()
 
-    #queue.append(url)
-    try:
-        tmp_title = downloader.get_title(url)
-        queue.append({"type": "Youtube", "title": tmp_title, "url": url})
 
+    if url is not None:
+        try:
+            tmp_title = await downloader.get_title(url)
+            queue.append({"type": "Youtube", "title": tmp_title, "url": url})
 
-        if voice_client.is_playing() or downloading == True:
-            await ctx.send(f"Added {tmp_title} to queue.")
+            if voice_client.is_playing() or downloading == True:
+                await ctx.send(f"Added {tmp_title} to queue.")
+                return
+            
+        except Exception as e:
+            await ctx.send (f"Error adding Youtube song to queue: {e}")
+            return
+
+    if ctx.message.attachments:
+        try:
+            for attachment in ctx.message.attachments:
+
+                filename_lower = (attachment.filename or "").lower()
+                if not filename_lower.endswith(".mp3"):
+                    await ctx.send("Please upload an **.mp3** file.")
+                    return
+                
+                os.makedirs("local_uploads", exist_ok=True)
+                local_path = os.path.join("local_uploads", attachment.filename)
+
+                try:
+                    await attachment.save(local_path)
+                except Exception as e:
+                    await ctx.send(f"Failed to download attachment: `{e}`")
+                    return
+                
+                queue.append({"type": "Local", "title": filename_lower, "url": local_path})
+
+                if voice_client.is_playing() or downloading == True:
+                    await ctx.send(f"Added {filename_lower} to queue.")
+
+        except Exception as e:
+            await ctx.send(f"Error adding local file song to queue {e}")
             return
         
-    except Exception as e:
-        await ctx.send (f"Error adding song to queue: {e}")
-        return
-
+        if voice_client.is_playing() or downloading == True:
+                return
+            
 
     #Loop while there is a queue
     while len(queue) > 0:
@@ -68,22 +100,26 @@ async def play(ctx, url: str = None):
         await asyncio.sleep(1)
 
         #play an audio clip to confirm to user we're downloading the song
-        dl_notif_source = discord.FFmpegPCMAudio('dlsong.mp3')
-        voice_client.play(dl_notif_source)
-        
-        #download the song, handle errors
-        downloading = True
-        try:
-            song_filename = await asyncio.to_thread(downloader.get_song, current_song["url"], max_length = 100 * 60)
-        except Exception as e:
-            logging.warning(f"Error downloading song: {e}")
-            await ctx.send(f"Error downloading song: {e}")
+        if current_song["type"] == "Youtube":
+
+            dl_notif_source = discord.FFmpegPCMAudio('dlsong.mp3')
+            voice_client.play(dl_notif_source)
+            
+            #download the song, handle errors
+            downloading = True
+            try:
+                song_filename = await asyncio.to_thread(downloader.get_song, current_song["url"], max_length = 100 * 60)
+            except Exception as e:
+                logging.warning(f"Error downloading song: {e}")
+                await ctx.send(f"Error downloading song: {e}")
+                downloading = False
+                return
+
             downloading = False
-            return
-
-        downloading = False
     
-
+        if current_song["type"] == "Local":
+            song_filename = current_song["url"]
+            await asyncio.sleep(1)
 
         audio_source = discord.FFmpegPCMAudio(song_filename)
         voice_client.play(audio_source)
