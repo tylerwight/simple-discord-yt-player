@@ -44,5 +44,5 @@ pip install -r requirements.txt
 ```
 python3 main.py
 ```
-
+- Create a cookies.txt file for ytdlp and put it in same dir as the .py files
 - if ytdlp asks for a javascript runtime, use the deno install script
