@@ -2,13 +2,15 @@ import os
 import asyncio
 import logging
 import random
-
 import discord
 from discord import app_commands
 from dotenv import load_dotenv
-
 import downloader
 
+
+##############
+####SETUP#####
+##############
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(threadName)s] %(name)s: %(message)s",
@@ -22,32 +24,25 @@ intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-# Global
+##############
+####Global#####
+##############
 queue: list[dict] = []
+#queue format: queue.append({"type": "Local", "title": filename_lower, "url": local_path})
+#queue.append({"type": "Youtube", "title": mytitle, "url": https://youtu...})
 now_playing: str | None = None
 goto_next: bool = False
 downloading: bool = False
 
 player_task: asyncio.Task | None = None
-queue_lock = asyncio.Lock()          # only for short queue mutations
+queue_lock = asyncio.Lock()          # Async lock to edit queue
 player_wakeup = asyncio.Event()      # wake the player when new stuff is queued
 
 
 
-@bot.event
-async def on_ready():
-    my_guild = 205936996139401218
-    logging.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    try:
-        synced = await tree.sync()
-        logging.info(f"Synced {len(synced)} slash commands globally")
-    except Exception as e:
-        logging.exception(f"Failed to sync commands: {e}")
-
-
-def _is_youtube_url(url: str) -> bool:
-    return ("youtube.com" in url) or ("youtu.be" in url)
-
+###############
+####Helpers####
+###############
 
 async def _ensure_voice(interaction: discord.Interaction) -> discord.VoiceClient | None:
     if not interaction.user:
@@ -70,9 +65,15 @@ async def _ensure_voice(interaction: discord.Interaction) -> discord.VoiceClient
     return voice_client
 
 
+def ensure_player_started(guild_id: int):
+    global player_task
+    if player_task is None or player_task.done():
+        player_task = asyncio.create_task(player_loop(guild_id))
 
+def _is_youtube_url(url: str) -> bool:
+    return ("youtube.com" in url) or ("youtu.be" in url)
 
-
+#Main Audio Player Loop
 async def player_loop(guild_id: int):
     """
     Background task that plays songs until the queue is empty, then disconnects.
@@ -168,16 +169,108 @@ async def player_loop(guild_id: int):
         logging.info("Player loop ended.")
 
 
-def ensure_player_started(guild_id: int):
-    global player_task
-    if player_task is None or player_task.done():
-        player_task = asyncio.create_task(player_loop(guild_id))
+# Generic template for sending messages to the user, includes the queue along with a title, message
+async def send_update_embed(interaction: discord.Interaction, intitle: str, message: str, length: int = 10, chunk_size: int = 5, ephemeral: bool = False,):
+    global queue, now_playing
+
+    embed = discord.Embed(
+        title=intitle,
+        description=message,
+        color=discord.Color.blurple(),
+    )
+
+    embed.add_field(
+        name="▶️ Currently Playing",
+        value=f"**{now_playing}**" if now_playing else "Nothing",
+        inline=False,
+    )
+
+    if not queue:
+        embed.add_field(name="📜 Up Next", value="Queue is empty.", inline=False)
+        embed.set_footer(text="Total tracks in queue: 0")
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+        return
+
+    shown = queue[:length]
+
+    lines = []
+    for i, item in enumerate(shown, start=1):
+        title = item.get("title", "Unknown title")
+        qtype = item.get("type", "Unknown")
+        url = item.get("url")
+
+        if len(title) > 80:
+            title = title[:77] + "..."
+
+        if qtype == "Youtube" and url:
+            line = f"`{i}.` **[{title}]({url})**  •  *{qtype}*"
+        else:
+            line = f"`{i}.` **{title}**  •  *{qtype}*"
+
+        lines.append(line)
+
+    def add_up_next_fields(embed_obj: discord.Embed, lines_list: list[str], chunk: int):
+        field_idx = 0
+        i = 0
+        while i < len(lines_list):
+            field_idx += 1
+            field_lines = []
+            field_len = 0
+            count_in_field = 0
+
+            while i < len(lines_list) and count_in_field < chunk:
+                candidate = lines_list[i]
+                candidate_len = len(candidate) + (1 if field_lines else 0)
+                if field_len + candidate_len > 1024:
+                    break
+                field_lines.append(candidate)
+                field_len += candidate_len
+                count_in_field += 1
+                i += 1
+
+            if not field_lines and i < len(lines_list):
+                field_lines = [lines_list[i][:1000] + "…"]
+                i += 1
+
+            name = "📜 Up Next" if field_idx == 1 else "\u200b"
+            embed_obj.add_field(name=name, value="\n".join(field_lines), inline=False)
+
+    add_up_next_fields(embed, lines, chunk_size)
+
+    if len(queue) > length:
+        embed.add_field(
+            name="\u200b",
+            value=f"… and **{len(queue) - length}** more in queue.",
+            inline=False,
+        )
+
+    embed.set_footer(text=f"Total tracks in queue: {len(queue)}")
+    if interaction.response.is_done():
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
+    else:
+        await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+
+
+#####################
+####BOT COMMANDS#####
+#####################
+@bot.event
+async def on_ready():
+    my_guild = 205936996139401218
+    logging.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    try:
+        synced = await tree.sync()
+        logging.info(f"Synced {len(synced)} slash commands globally")
+    except Exception as e:
+        logging.exception(f"Failed to sync commands: {e}")
 
 
 
 
-
-@tree.command(name="play", description="Play a YouTube URL or an attached .mp3 file.")
+@tree.command(name="play", description="Play/queue a YouTube URL or an attached .mp3 file.")
 @app_commands.describe(url="YouTube URL (youtube.com / youtu.be)", file="Attach an .mp3 file to play locally")
 async def play(interaction: discord.Interaction, url: str | None = None, file: discord.Attachment | None = None):
     global queue
@@ -323,88 +416,42 @@ async def shuffle(interaction: discord.Interaction):
     await send_update_embed(interaction, "Queue Shuffled", "", 5)
 
 
-async def send_update_embed(interaction: discord.Interaction, intitle: str, message: str, length: int = 10, chunk_size: int = 5, ephemeral: bool = False,):
-    global queue, now_playing
 
-    embed = discord.Embed(
-        title=intitle,
-        description=message,
-        color=discord.Color.blurple(),
-    )
+@tree.command(name="search", description="Search YouTube and queue the top result.")
+@app_commands.describe(query="Search text (song name, artist, etc.)")
+async def search(interaction: discord.Interaction, query: str):
+    global queue
+    await interaction.response.defer(thinking=True)
 
-    embed.add_field(
-        name="▶️ Currently Playing",
-        value=f"**{now_playing}**" if now_playing else "Nothing",
-        inline=False,
-    )
-
-    if not queue:
-        embed.add_field(name="📜 Up Next", value="Queue is empty.", inline=False)
-        embed.set_footer(text="Total tracks in queue: 0")
-        if interaction.response.is_done():
-            await interaction.followup.send(embed=embed, ephemeral=ephemeral)
-        else:
-            await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+    voice_client = await _ensure_voice(interaction)
+    if voice_client is None:
         return
 
-    shown = queue[:length]
+    try:
+        result = await downloader.search_youtube_top_result(query)
+    except Exception as e:
+        await interaction.followup.send(f"Search failed: {e}", ephemeral=True)
+        return
 
-    lines = []
-    for i, item in enumerate(shown, start=1):
-        title = item.get("title", "Unknown title")
-        qtype = item.get("type", "Unknown")
-        url = item.get("url")
+    if not result:
+        await interaction.followup.send("No results found.", ephemeral=True)
+        return
 
-        if len(title) > 80:
-            title = title[:77] + "..."
+    title = result["title"]
+    url = result["url"]
 
-        if qtype == "Youtube" and url:
-            line = f"`{i}.` **[{title}]({url})**  •  *{qtype}*"
-        else:
-            line = f"`{i}.` **{title}**  •  *{qtype}*"
+    async with queue_lock:
+        queue.append({"type": "Youtube", "title": title, "url": url})
 
-        lines.append(line)
+    await send_update_embed(interaction, "Queued (Top Search Result)", f"[{title}]({url})", 5)
 
-    def add_up_next_fields(embed_obj: discord.Embed, lines_list: list[str], chunk: int):
-        field_idx = 0
-        i = 0
-        while i < len(lines_list):
-            field_idx += 1
-            field_lines = []
-            field_len = 0
-            count_in_field = 0
+    ensure_player_started(interaction.guild.id)
+    player_wakeup.set()
 
-            while i < len(lines_list) and count_in_field < chunk:
-                candidate = lines_list[i]
-                candidate_len = len(candidate) + (1 if field_lines else 0)
-                if field_len + candidate_len > 1024:
-                    break
-                field_lines.append(candidate)
-                field_len += candidate_len
-                count_in_field += 1
-                i += 1
 
-            if not field_lines and i < len(lines_list):
-                field_lines = [lines_list[i][:1000] + "…"]
-                i += 1
 
-            name = "📜 Up Next" if field_idx == 1 else "\u200b"
-            embed_obj.add_field(name=name, value="\n".join(field_lines), inline=False)
 
-    add_up_next_fields(embed, lines, chunk_size)
 
-    if len(queue) > length:
-        embed.add_field(
-            name="\u200b",
-            value=f"… and **{len(queue) - length}** more in queue.",
-            inline=False,
-        )
-
-    embed.set_footer(text=f"Total tracks in queue: {len(queue)}")
-    if interaction.response.is_done():
-        await interaction.followup.send(embed=embed, ephemeral=ephemeral)
-    else:
-        await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
 
 
 bot.run(DISCORD_TOKEN)

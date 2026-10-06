@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 
+cookies_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cookies.txt')
 logger = logging.getLogger(__name__)
 
 def get_song(url, max_length = 10 * 60):
@@ -10,18 +11,20 @@ def get_song(url, max_length = 10 * 60):
     filename = 'playing.mp3'
     if os.path.exists(filename):
         os.remove(filename)
-
+    
     opts_check_length = {
         'quiet': True,
         'skip_download': True,
         'noplaylist': True,
         "playlist_items": "1",
+        'cookiefile': cookies_path,
     }
     opts_download = {
         'format': 'bestaudio/best',
         'outtmpl': 'playing.%(ext)s',
         'noplaylist': True,
         "playlist_items": "1",
+        'cookiefile': cookies_path,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -53,6 +56,7 @@ def get_title_blocking(url):
         "skip_download": True,
         'noplaylist': True,
         "playlist_items": "1",
+        'cookiefile': cookies_path,
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -75,6 +79,7 @@ def get_playlist_entries_blocking(url: str):
         "skip_download": True,
         "extract_flat": True,  
         "noplaylist": False,
+        'cookiefile': cookies_path,
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -115,3 +120,41 @@ def get_playlist_entries_blocking(url: str):
 
 async def get_playlist_entries(url: str):
     return await asyncio.to_thread(get_playlist_entries_blocking, url)
+
+
+
+def search_youtube_top_result_blocking(query: str) -> dict | None:
+    opts = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "extract_flat": True, 
+        'cookiefile': cookies_path,
+    }
+
+    search_term = f"ytsearch1:{query}"
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(search_term, download=False)
+
+    entries = info.get("entries") or []
+    if not entries:
+        return None
+
+    top = entries[0] or {}
+    title = top.get("title") or "Unknown Title"
+    url = top.get("webpage_url") or top.get("url")
+    vid_id = top.get("id")
+
+    if url and isinstance(url, str) and url.startswith("http"):
+        video_url = url
+    elif vid_id:
+        video_url = f"https://www.youtube.com/watch?v={vid_id}"
+    else:
+        return None
+
+    return {"title": title, "url": video_url}
+
+
+async def search_youtube_top_result(query: str) -> dict | None:
+    return await asyncio.to_thread(search_youtube_top_result_blocking, query)
